@@ -9,6 +9,8 @@
   - Reference the resource to create a c2 server using ngrok 
 4. Get keyboard input
   - Function recording all keyboard inputs. 
+  - Use pynput library
+  - Reference - https://omomuki-tech.com/archives/1406
 5. Download and execute files
   - Function that downloads specified file to user’s computer or a public server
 6. *Hide the presence - reopens when targets computer is rebooted
