@@ -20,7 +20,10 @@ clients = {}
 # 
 
 def handle_client(client_socket, client_address):
-
+  with client_socket as sock:
+    request = sock.recv(1024)
+    print(f'[*] Received: {request.decode("utf-8")}')
+    sock.send(b'ACK')
 
 
 # Create a TCP server (listener) and bind it to the specified IP and port
@@ -32,21 +35,21 @@ def handle_client(client_socket, client_address):
 # 
 def start_listener():
   # Creates a TCP server and bind it to IP and PORT
-  listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-  listener.bind((IP, PORT))
-  listener.listen()
+  with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+    listener.bind((IP, PORT))
+    listener.listen()
 
-  # Prints connection
-  print(f'[*] Server listening on {IP}:{PORT}')
+    # Prints connection
+    print(f'[*] Server listening on {IP}:{PORT}')
 
-  while True:
-    sock, addr = listener.accept() # Accept client connection
-    thread = threading.Thread(target = handle_client, args = (sock, addr)) # Create a new thread to handle the client connection
-    thread.start() # Start the thread to handle the client connection 
-    
-    clients[addr] = sock # Store the client connection in the clients dictionary for easy access and management
+    while True:
+      sock, addr = listener.accept() # Accept client connection
+      thread = threading.Thread(target = handle_client, args = (sock, addr)) # Create a new thread to handle the client connection
+      thread.start() # Start the thread to handle the client connection 
+      
+      clients[addr] = sock # Store the client connection in the clients dictionary for easy access and management
 
-    print(f'[*] Number of connected clients: {len(clients)}') # Print the number of connected clients
+      print(f'[*] Number of connected clients: {len(clients)}') # Print the number of connected clients
 
 
 
