@@ -62,6 +62,7 @@ def start_listener():
   # Creates a TCP server and bind it to IP and PORT
   with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
     listener.bind((IP, PORT))
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     listener.listen()
 
     # Prints connection
@@ -69,8 +70,8 @@ def start_listener():
 
     while True:
       sock, addr = listener.accept() # Accept client connection
-      thread = threading.Thread(target = handle_client, args = (sock, addr)) # Create new thread to handle connection
-      thread.start() # Start thread to handle the client connection 
+      handle_thread = threading.Thread(target = handle_client, args = (sock, addr), daemon = True) # Create new thread to handle connection
+      handle_thread.start() # Start thread to handle the client connection 
       
       clients[addr] = sock # Store client connection in dictionary
 
@@ -90,22 +91,26 @@ if __name__ == "__main__":
   print("Commands Inputs: 'exit' to close connection with a client")
   print("/[address] [command] to send a command to a specific client")
   print("/all [command] to send a command to all clients")
-  start_listener()
+  #Creates a thread to run start_listener in the background
+  starter_thread = threading.Thread(target = start_listener, daemon = True) 
+  starter_thread.start()
   while True: 
-    input = input("Enter command to send to clients: ") # Prompt user to enter a command
+    cmd = input("Enter command to send to clients: ") # Prompt user to enter a command
     # Check for / command to send to clients
-    if (input[0]== '/'):
-      if (input[1:4] == "all"):
-        command = input[5:] # Extract command from input
+    if (cmd[0]== '/'):
+      if (cmd[1:4] == "all"):
+        command = cmd[5:] # Extract command from input
+
         for client in clients.values(): 
           client.send(command.encode("utf-8")) # Send command to each client
       else:
-        address, command = input[1:].split(" ", 1) # Extract address and command from input
+        address, command = cmd[1:].split(" ", 1) # Extract address and command from input
         if address in clients: 
           clients[address].send(command.encode("utf-8")) 
         else:
           print(f'[*] No client found with address {address}') # Print a message indicating that no client was found with specified address
 
+    else: continue
     pass # Keep main thread running to allow listener to continue accepting connections
 
 
