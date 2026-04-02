@@ -116,6 +116,7 @@ if __name__ == "__main__":
   while True: 
     cmd = input("Enter command to send to clients: ") # Prompt user to enter a command
     # Check for / command to send to clients
+    if cmd == '': continue
     if (cmd[0]== '/'):
       if (cmd[1:4] == "all"):
         command = cmd[5:] # Extract command from input
