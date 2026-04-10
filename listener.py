@@ -116,7 +116,6 @@ if __name__ == "__main__":
         command = cmd[5:] # Extract command from input
 
         for client in clients.values(): 
-          client.send(os.getcwd().encode("utf-8"))
           client.send(command.encode("utf-8")) # Send command to each client
       else:
         address, command = cmd[1:].split(" ", 1) # Extract address and command from input
