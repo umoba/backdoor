@@ -11,8 +11,9 @@
   - Function recording all keyboard inputs. 
   - Use pynput libraryhttps://omomuki-tech.com/archives/1406
   - Reference - 
-5. Download and execute files
-  - Function that downloads specified file to user’s computer or a public server
+5. Download, execute, and execute files
+  - Function that download specified file to taget's computer and execute that file shen given admin access
+  - Function that allows to upload an accessible file from ghe target's computer from the user.
 6. *Hide the presence - reopens when targets computer is rebooted
   - Using alias names
   - Erase logs
