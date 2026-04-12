@@ -24,8 +24,10 @@ clients = {}
 # Postcondition: The function will receive data from the client, anad handle it accordingly. 
 
 def handle_client(client_socket, client_address):
+
+  # Store client for sending commands
   print(f'[*] Connection made with: {client_address}')
-  clients[client_address] = client_socket   # Store client for sending commands
+  clients[client_address] = client_socket  
 
   try:
     while True:
@@ -89,26 +91,41 @@ def start_listener():
     print(f'[*] Server listening on {IP}:{PORT}')
 
     while True:
-      sock, addr = listener.accept() # Accept client connection
-      handle_thread = threading.Thread(target = handle_client, args = (sock, addr), daemon = True) # Create new thread to handle connection
-      handle_thread.start() # Start thread to handle the client connection 
-      
-      clients[addr] = sock # Store client connection in dictionary
+      # Accept client connection
+      sock, addr = listener.accept() 
 
-      print(f'[*] Number of connected clients: {len(clients)}') # Print number of connected clients
+      # Create and start new thread to handle connection
+      handle_thread = threading.Thread(target = handle_client, args = (sock, addr), daemon = True) 
+      handle_thread.start() 
+
+      # Add client connection in dictionary
+      clients[addr] = sock 
+
+      # Print total number of connected clients 
+      print(f'[*] Number of connected clients: {len(clients)}') 
 
 
 # Run starat_listener
 if __name__ == "__main__":
-  print("[*] Starting listener...") # Print a message indicating that the listener is starting
+  
+  # Print a message indicating that the listener is starting
+  print("[*] Starting listener...") 
+
+  # Print instructions for user input commands
   print("Commands Inputs: 'exit' to close connection with a client")
   print("/[address] [command] to send a command to a specific client")
   print("/all [command] to send a command to all clients")
+
   #Creates a thread to run start_listener in the background
   starter_thread = threading.Thread(target = start_listener, daemon = True) 
   starter_thread.start()
+
+  # Main thread will be used to send commands to clients, while the listener thread will continue to 
+  # accept connections and print received data from clients
+  # Logic to determine which client(s) to send the command based on user input
+
   while True: 
-    cmd = input("Enter command to send to clients: ") # Prompt user to enter a command
+    cmd = input("Enter command to send to clients: ")
     # Check for / command to send to clients
     if cmd == '': continue
     if (cmd[0]== '/'):
@@ -122,7 +139,8 @@ if __name__ == "__main__":
         if address in clients: 
           clients[address].send(command.encode("utf-8")) 
         else:
-          print(f'[*] No client found with address {address}') # Print a message indicating that no client was found with specified address
+          # Acknowledges error by user with no client found given the address
+          print(f'[*] No client found with address {address}')
 
     else: continue
     pass # Keep main thread running to allow listener to continue accepting connections

