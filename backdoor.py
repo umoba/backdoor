@@ -198,11 +198,10 @@ def upload_file(filename, sock):
 
     print(f"[*] Uploading: {full_path}")
 
-    with open(full_path, "rb") as f:
+    with open(full_path, "r") as f:
       file_data = f.read()
 
-    encoded = base64.b64encode(file_data).decode("utf-8")
-    sock.send(f"UPLOAD_DATA|{filename}|{len(file_data)}|{encoded}".encode("utf-8"))
+    sock.send(f"UPLOAD_DATA|{filename}|{len(file_data)}|{file_data}".encode("utf-8"))
     
     print(f"[+] Uploaded: {filename} ({len(file_data)} bytes)")
 
