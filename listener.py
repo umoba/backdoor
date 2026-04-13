@@ -18,10 +18,15 @@ PORT = 4444 # Port for conenction
 # Dictionary to store connected clients
 clients = {}
 
-# Function to handle incoming client connections
-# This function will be responsible for receiving data from the client and processing it as needed
-# Precondition: There is an incoming client connection to the listener.
-# Postcondition: The function will receive data from the client, anad handle it accordingly. 
+# Handles an individual client connection and processes incoming payload messages.
+# Preconditions: client_socket is a connected socket and client_address identifies the client.
+# Postconditions: Processes incoming messages, prints decoded responses, removes the client on disconnect.
+# Pseudocode:
+# 1. Build a client key string from the address and port
+# 2. Store the client socket in the clients dictionary
+# 3. Loop while receiving data from the client
+# 4. Decode the message and route based on its prefix
+# 5. On disconnect or error, close the socket and remove the client
 
 def handle_client(client_socket, client_address):
 
@@ -72,15 +77,16 @@ def handle_client(client_socket, client_address):
       del clients[client_key]
     print(f'[*] Client {client_key} disconnected. Remaining: {len(clients)}')
 
-# Create a TCP server (listener) and bind it to the specified IP and port
-# Identify all connected target cients in the dictionary for accessability
-# Listen on port for client connections, then use a thread (from threading library) to handle them simultaneously
-# All connected clients will be stored in a dictionary for easy access and management
-# The handle_client function will be responsible for receiving data from the client and processing it as needed
-# Precondition: The listener is set up and running in python as well as ngrok is activated to create a tunnel to the target machine.
-# Postcondition: The listener will be able to handle multiple client connections simultaneously 
-# and print the received data from each client.
-# 
+# Starts the listener server, accepts incoming client connections, and spawns handlers for each client.
+# Preconditions: IP and PORT are configured, socket binding is permitted, and ngrok tunnel is running if used.
+# Postconditions: Listener accepts multiple clients and maintains the clients dictionary while reporting connection count.
+# Pseudocode:
+# 1. Create a TCP socket and bind it to IP:PORT
+# 2. Enable address reuse and begin listening
+# 3. Accept incoming connections in a loop
+# 4. For each connection, start handle_client in a new thread
+# 5. Store the connected client socket and print the total count
+
 def start_listener():
   # Creates a TCP server and bind it to IP and PORT
   with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
