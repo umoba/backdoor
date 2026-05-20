@@ -15,7 +15,7 @@ import sys
 import platform
 import getpass
 import subprocess
-
+import zlib
 # Import the backdoor module (adjust path if needed)
 import backdoor  
 
